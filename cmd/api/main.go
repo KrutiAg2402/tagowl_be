@@ -9,8 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-
-	"tagowl/backend/internal/catalog"
+	
 	cataloghandler "tagowl/backend/internal/catalog/handler"
 	mongorepo "tagowl/backend/internal/catalog/repository/mongo"
 )
