@@ -20,6 +20,8 @@ func NewHandler(repo Repository) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", api.handleHealth)
+	mux.HandleFunc("/api/v1/admin/stickers", api.handleAdminStickers)
+	mux.HandleFunc("/api/v1/admin/stickers/", api.handleAdminStickerRoutes)
 	mux.HandleFunc("/api/v1/home", api.handleHome)
 	mux.HandleFunc("/api/v1/stickers", api.handleListStickers)
 	mux.HandleFunc("/api/v1/stickers/", api.handleStickerRoutes)
@@ -179,6 +181,110 @@ func (a *API) handleOrders(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, response)
 }
 
+func (a *API) handleAdminStickers(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		includeInactive := parseBool(r.URL.Query().Get("includeInactive"))
+		items, err := a.repo.AdminList(r.Context(), includeInactive)
+		if err != nil {
+			writeRepoError(w, err)
+			return
+		}
+
+		respondJSON(w, http.StatusOK, AdminListResponse{
+			Items:           items,
+			Count:           len(items),
+			IncludeInactive: includeInactive,
+		})
+	case http.MethodPost:
+		var request AdminCreateStickerRequest
+		if err := decodeJSON(r, &request); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		sticker, err := a.repo.AdminCreateSticker(r.Context(), request)
+		if err != nil {
+			writeRepoError(w, err)
+			return
+		}
+
+		respondJSON(w, http.StatusCreated, sticker)
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (a *API) handleAdminStickerRoutes(w http.ResponseWriter, r *http.Request) {
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/admin/stickers/"), "/")
+	if path == "" {
+		respondError(w, http.StatusBadRequest, "sticker id is required")
+		return
+	}
+
+	parts := strings.Split(path, "/")
+	id := parts[0]
+
+	switch {
+	case len(parts) == 1 && r.Method == http.MethodGet:
+		sticker, ok, err := a.repo.AdminGetByID(r.Context(), id)
+		if err != nil {
+			writeRepoError(w, err)
+			return
+		}
+		if !ok {
+			respondError(w, http.StatusNotFound, "sticker not found")
+			return
+		}
+		respondJSON(w, http.StatusOK, sticker)
+	case len(parts) == 1 && r.Method == http.MethodPatch:
+		var request AdminUpdateStickerRequest
+		if err := decodeJSON(r, &request); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		sticker, err := a.repo.AdminUpdateSticker(r.Context(), id, request)
+		if err != nil {
+			writeRepoError(w, err)
+			return
+		}
+		respondJSON(w, http.StatusOK, sticker)
+	case len(parts) == 1 && r.Method == http.MethodDelete:
+		sticker, err := a.repo.AdminDeleteSticker(r.Context(), id)
+		if err != nil {
+			writeRepoError(w, err)
+			return
+		}
+		respondJSON(w, http.StatusOK, sticker)
+	case len(parts) == 2 && parts[1] == "price" && r.Method == http.MethodPatch:
+		var request AdminUpdatePriceRequest
+		if err := decodeJSON(r, &request); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		sticker, err := a.repo.AdminUpdatePrice(r.Context(), id, request)
+		if err != nil {
+			writeRepoError(w, err)
+			return
+		}
+		respondJSON(w, http.StatusOK, sticker)
+	case len(parts) == 2 && parts[1] == "status" && r.Method == http.MethodPatch:
+		var request AdminUpdateStatusRequest
+		if err := decodeJSON(r, &request); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		sticker, err := a.repo.AdminUpdateStatus(r.Context(), id, request)
+		if err != nil {
+			writeRepoError(w, err)
+			return
+		}
+		respondJSON(w, http.StatusOK, sticker)
+	default:
+		respondError(w, http.StatusNotFound, "route not found")
+	}
+}
+
 func decodeEventRequest(r *http.Request) EventRequest {
 	var request EventRequest
 	if r.ContentLength == 0 {
@@ -223,8 +329,10 @@ func writeRepoError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrStickerNotFound):
 		respondError(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, ErrActorKeyRequired), errors.Is(err, ErrEmptyOrder):
+	case errors.Is(err, ErrActorKeyRequired), errors.Is(err, ErrEmptyOrder), errors.Is(err, ErrInvalidSticker), errors.Is(err, ErrInvalidPrice), errors.Is(err, ErrNoStickerChanges):
 		respondError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrDuplicateSticker):
+		respondError(w, http.StatusConflict, err.Error())
 	default:
 		respondError(w, http.StatusInternalServerError, err.Error())
 	}
@@ -240,6 +348,14 @@ func parseLimit(value string, fallback int) int {
 		return fallback
 	}
 
+	return parsed
+}
+
+func parseBool(value string) bool {
+	parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+	if err != nil {
+		return false
+	}
 	return parsed
 }
 
@@ -263,7 +379,7 @@ func methodNotAllowed(w http.ResponseWriter) {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 		if r.Method == http.MethodOptions {

@@ -15,10 +15,12 @@ import (
 
 func main() {
 	port := getEnv("PORT", "8080")
-	dbFile := getEnv("STICKER_DB_FILE", "data/stickers.db")
+	mongoURI := getEnv("MONGODB_URI", "mongodb://localhost:27017/")
+	mongoDatabase := getEnv("MONGODB_DATABASE", "tag_owl")
+	mongoCollection := getEnv("MONGODB_COLLECTION", "producer")
 	seedFile := getEnv("STICKER_SEED_FILE", "data/stickers.json")
 
-	repo, err := catalog.NewSQLiteRepository(dbFile, seedFile)
+	repo, err := catalog.NewMongoRepository(mongoURI, mongoDatabase, mongoCollection, seedFile)
 	if err != nil {
 		log.Fatalf("load sticker catalog: %v", err)
 	}
@@ -48,7 +50,9 @@ func main() {
 	}()
 
 	log.Printf("sticker API listening on http://localhost:%s", port)
-	log.Printf("using sqlite db %s", dbFile)
+	log.Printf("using mongodb uri %s", mongoURI)
+	log.Printf("using mongodb database %s", mongoDatabase)
+	log.Printf("using mongodb collection %s", mongoCollection)
 	log.Printf("using seed file %s", seedFile)
 
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

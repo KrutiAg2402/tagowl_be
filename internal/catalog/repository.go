@@ -24,6 +24,13 @@ type Repository interface {
 	AddFavorite(context.Context, string, string) (EventResponse, error)
 	RemoveFavorite(context.Context, string, string) (EventResponse, error)
 	CreateOrder(context.Context, OrderCreateRequest) (OrderResponse, error)
+	AdminList(context.Context, bool) ([]Sticker, error)
+	AdminGetByID(context.Context, string) (Sticker, bool, error)
+	AdminCreateSticker(context.Context, AdminCreateStickerRequest) (Sticker, error)
+	AdminUpdateSticker(context.Context, string, AdminUpdateStickerRequest) (Sticker, error)
+	AdminUpdatePrice(context.Context, string, AdminUpdatePriceRequest) (Sticker, error)
+	AdminUpdateStatus(context.Context, string, AdminUpdateStatusRequest) (Sticker, error)
+	AdminDeleteSticker(context.Context, string) (Sticker, error)
 	Close() error
 }
 

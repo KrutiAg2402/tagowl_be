@@ -1,118 +1,369 @@
-# Sticker Backend
+# TagOwl Backend
 
-This backend is written in Go and now uses SQLite as the main data store.
+Go backend for the TagOwl sticker website.
 
-On first run it:
-- creates `data/stickers.db`
-- creates the SQLite tables
-- seeds the catalog from `data/stickers.json`
+It provides:
+- public catalog APIs for the website frontend
+- event APIs for views and favorites
+- order APIs for recording purchases
+- admin APIs for creating, updating, listing, and deleting stickers
 
-## Run
+The backend uses MongoDB with these defaults:
+- Mongo URI: `mongodb://localhost:27017/`
+- Database: `tag_owl`
+- Main sticker collection: `producer`
+
+On first startup, the server:
+- connects to MongoDB
+- creates indexes
+- seeds the `producer` collection from [data/stickers.json](/Users/agarwalkruti/Documents/New project/tagowl/backend/data/stickers.json:1) if the collection is empty
+
+## Prerequisites
+
+- Go installed
+- MongoDB running locally on `mongodb://localhost:27017/`
+
+## Run The Server
+
+Start MongoDB first, then run:
 
 ```bash
-cd /Users/agarwalkruti/Documents/New\ project/tagowl/backend
+cd "/Users/agarwalkruti/Documents/New project/tagowl/backend"
 go run ./cmd/api
 ```
 
-Default port: `8080`
+The API starts on:
+- `http://localhost:8080`
 
-Optional env vars:
+Health check:
+
+```bash
+curl http://localhost:8080/healthz
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok",
+  "service": "sticker-catalog-api",
+  "timestamp": "2026-04-18T12:00:00Z"
+}
+```
+
+## Environment Variables
+
+You can override the defaults like this:
+
+```bash
+cd "/Users/agarwalkruti/Documents/New project/tagowl/backend"
+PORT=8081 \
+MONGODB_URI="mongodb://localhost:27017/" \
+MONGODB_DATABASE="tag_owl" \
+MONGODB_COLLECTION="producer" \
+STICKER_SEED_FILE="data/stickers.json" \
+go run ./cmd/api
+```
+
+Supported env vars:
 
 ```bash
 PORT=8080
-STICKER_DB_FILE=data/stickers.db
+MONGODB_URI=mongodb://localhost:27017/
+MONGODB_DATABASE=tag_owl
+MONGODB_COLLECTION=producer
 STICKER_SEED_FILE=data/stickers.json
 ```
 
-## Main Read APIs
+## API Summary
 
-1. `GET /api/v1/home`
+Public APIs:
+- `GET /healthz`
+- `GET /api/v1/home`
+- `GET /api/v1/stickers`
+- `GET /api/v1/stickers/{id}`
 
-Returns the homepage payload in one request.
+Engagement and order APIs:
+- `POST /api/v1/stickers/{id}/view`
+- `POST /api/v1/stickers/{id}/favorite`
+- `DELETE /api/v1/stickers/{id}/favorite`
+- `POST /api/v1/orders`
+
+Admin APIs:
+- `GET /api/v1/admin/stickers`
+- `POST /api/v1/admin/stickers`
+- `GET /api/v1/admin/stickers/{id}`
+- `PATCH /api/v1/admin/stickers/{id}`
+- `PATCH /api/v1/admin/stickers/{id}/price`
+- `PATCH /api/v1/admin/stickers/{id}/status`
+- `DELETE /api/v1/admin/stickers/{id}`
+
+## Public APIs
+
+### 1. Health Check
+
+`GET /healthz`
+
+```bash
+curl http://localhost:8080/healthz
+```
+
+### 2. Homepage Data
+
+`GET /api/v1/home`
+
+Used by the frontend homepage to fetch:
+- categories
+- trending shelf
+- new arrivals
+- top rated
+- other homepage sections returned by the backend
 
 Query params:
 - `limit`
 
-2. `GET /api/v1/stickers`
+```bash
+curl "http://localhost:8080/api/v1/home?limit=4"
+```
 
-Returns sticker cards for browse and search pages.
+### 3. List Stickers
+
+`GET /api/v1/stickers`
 
 Query params:
 - `category`
 - `tag`
-- `sort` with values `trending`, `rank`, `top_rated`, `best_selling`, `newest`, `price_asc`, `price_desc`
+- `sort`
 - `limit`
 
-3. `GET /api/v1/stickers/{id}`
+Supported `sort` values:
+- `trending`
+- `rank`
+- `top_rated`
+- `best_selling`
+- `newest`
+- `price_asc`
+- `price_desc`
 
-Returns one sticker with live 7-day metrics and computed `trendingScore`.
+Examples:
 
-## Metric Recording APIs
-
-4. `POST /api/v1/stickers/{id}/view`
-
-Example body:
-
-```json
-{
-  "actorKey": "session-123"
-}
+```bash
+curl "http://localhost:8080/api/v1/stickers"
 ```
 
-Behavior:
-- records one view for that sticker for the current day
-- if the same `actorKey` sends another view on the same day, it is ignored
-- if no `actorKey` is sent, the backend falls back to request IP
-
-5. `POST /api/v1/stickers/{id}/favorite`
-
-Example body:
-
-```json
-{
-  "actorKey": "session-123"
-}
+```bash
+curl "http://localhost:8080/api/v1/stickers?category=Animals&sort=trending&limit=8"
 ```
 
-Behavior:
-- creates or re-activates a favorite for that actor
-- increments `favorites_7d` only when the favorite becomes active again
-
-6. `DELETE /api/v1/stickers/{id}/favorite?actorKey=session-123`
-
-Behavior:
-- marks the favorite inactive
-- does not reduce `favorites_7d`, because that metric tracks favorite actions added in the last 7 days
-
-7. `POST /api/v1/orders`
-
-Example body:
-
-```json
-{
-  "customerKey": "customer-123",
-  "items": [
-    {
-      "stickerId": "stk_001",
-      "quantity": 2
-    }
-  ]
-}
+```bash
+curl "http://localhost:8080/api/v1/stickers?tag=cute&sort=top_rated&limit=12"
 ```
 
-Behavior:
-- creates an order row
-- creates order item rows
-- increments `sales_7d` by the ordered quantity
+### 4. Get Sticker By ID
+
+`GET /api/v1/stickers/{id}`
+
+Example:
+
+```bash
+curl "http://localhost:8080/api/v1/stickers/stk_001"
+```
+
+This returns the sticker plus live derived metrics like:
+- `views7D`
+- `sales7D`
+- `favorites7D`
+- `trendingScore`
+
+## Engagement And Order APIs
+
+### 5. Record A View
+
+`POST /api/v1/stickers/{id}/view`
+
+The backend uses `actorKey` to prevent duplicate view inflation.
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/stickers/stk_001/view" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "actorKey": "session-123"
+  }'
+```
+
+### 6. Add Favorite
+
+`POST /api/v1/stickers/{id}/favorite`
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/stickers/stk_001/favorite" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "actorKey": "user-123"
+  }'
+```
+
+### 7. Remove Favorite
+
+`DELETE /api/v1/stickers/{id}/favorite`
+
+You can send `actorKey` in the query string:
+
+```bash
+curl -X DELETE "http://localhost:8080/api/v1/stickers/stk_001/favorite?actorKey=user-123"
+```
+
+### 8. Create Order
+
+`POST /api/v1/orders`
+
+This records sales and updates sales-related metrics.
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/orders" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customerKey": "customer-001",
+    "items": [
+      {
+        "stickerId": "stk_001",
+        "quantity": 2
+      },
+      {
+        "stickerId": "stk_002",
+        "quantity": 1
+      }
+    ]
+  }'
+```
+
+## Admin APIs
+
+These APIs are for your business operations.
+
+### 9. List Admin Stickers
+
+`GET /api/v1/admin/stickers`
+
+By default, this returns active stickers.
+
+```bash
+curl "http://localhost:8080/api/v1/admin/stickers"
+```
+
+Include inactive and soft-deleted stickers:
+
+```bash
+curl "http://localhost:8080/api/v1/admin/stickers?includeInactive=true"
+```
+
+### 10. Create Sticker
+
+`POST /api/v1/admin/stickers`
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/admin/stickers" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "stk_admin_demo_001",
+    "name": "Galaxy Cat",
+    "description": "Cute galaxy-themed cat sticker",
+    "imageUrl": "https://cdn.example.com/stickers/galaxy-cat.png",
+    "category": "Animals",
+    "tags": ["cat", "cute", "space"],
+    "price": 3.99,
+    "currency": "USD",
+    "rank": 1,
+    "rating": 4.9,
+    "reviewCount": 312,
+    "isNewArrival": true,
+    "isActive": true
+  }'
+```
+
+### 11. Get Admin Sticker By ID
+
+`GET /api/v1/admin/stickers/{id}`
+
+```bash
+curl "http://localhost:8080/api/v1/admin/stickers/stk_admin_demo_001"
+```
+
+### 12. Update Sticker Metadata
+
+`PATCH /api/v1/admin/stickers/{id}`
+
+Use this for partial updates to business fields like:
+- `name`
+- `description`
+- `imageUrl`
+- `category`
+- `tags`
+- `price`
+- `currency`
+- `rank`
+- `rating`
+- `reviewCount`
+- `isNewArrival`
+- `isActive`
+
+```bash
+curl -X PATCH "http://localhost:8080/api/v1/admin/stickers/stk_admin_demo_001" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Galaxy Cat Deluxe",
+    "description": "Updated admin description",
+    "tags": ["cat", "cute", "space", "premium"],
+    "rank": 2
+  }'
+```
+
+### 13. Update Price Only
+
+`PATCH /api/v1/admin/stickers/{id}/price`
+
+```bash
+curl -X PATCH "http://localhost:8080/api/v1/admin/stickers/stk_admin_demo_001/price" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "price": 4.49,
+    "currency": "USD"
+  }'
+```
+
+### 14. Update Status
+
+`PATCH /api/v1/admin/stickers/{id}/status`
+
+Set `isActive` to `false` to hide a sticker from the public APIs.
+
+```bash
+curl -X PATCH "http://localhost:8080/api/v1/admin/stickers/stk_admin_demo_001/status" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "isActive": false
+  }'
+```
+
+### 15. Soft Delete Sticker
+
+`DELETE /api/v1/admin/stickers/{id}`
+
+This is a soft delete. The sticker is marked inactive instead of being permanently removed from MongoDB.
+
+```bash
+curl -X DELETE "http://localhost:8080/api/v1/admin/stickers/stk_admin_demo_001"
+```
 
 ## Sticker Schema
 
-Stored sticker metadata:
+Stored sticker document:
 
 ```json
 {
   "id": "stk_001",
   "name": "Galaxy Cat",
+  "description": "Cute galaxy-themed cat sticker",
   "imageUrl": "https://cdn.example.com/stickers/galaxy-cat.png",
   "category": "Animals",
   "tags": ["cat", "cute", "space"],
@@ -122,43 +373,42 @@ Stored sticker metadata:
   "rating": 4.9,
   "reviewCount": 312,
   "isNewArrival": true,
-  "createdAt": "2026-04-10T09:00:00Z"
+  "isActive": true,
+  "createdAt": "2026-04-10T09:00:00Z",
+  "updatedAt": "2026-04-10T09:00:00Z"
 }
 ```
 
-Derived metrics returned by the API:
+Derived response fields:
 
 ```json
 {
-  "views7D": 1861,
-  "sales7D": 43,
-  "favorites7D": 129,
-  "trendingScore": 1111.7
+  "views7D": 1860,
+  "sales7D": 41,
+  "favorites7D": 128,
+  "trendingScore": 1088.6
 }
 ```
 
-## SQLite Tables
+## MongoDB Collections
 
-- `stickers`
-- `sticker_tags`
-- `sticker_daily_metrics`
-- `sticker_view_events`
-- `sticker_favorites`
-- `orders`
-- `order_items`
+Main collection:
+- `producer`
 
-## How The 7-Day Metrics Work
+Supporting collections:
+- `producer_daily_metrics`
+- `producer_view_events`
+- `producer_favorites`
+- `producer_orders`
 
-- `views7D` comes from summing `views_count` in `sticker_daily_metrics` for the last 7 days
-- `favorites7D` comes from summing `favorites_count` in `sticker_daily_metrics` for the last 7 days
-- `sales7D` comes from summing `sales_count` in `sticker_daily_metrics` for the last 7 days
+## Metrics And Trending
 
-That means the API does not trust the frontend to send final metric values.
-The frontend only tells the backend about events, and the backend updates the SQLite tables.
+The backend records source events and builds rolling metrics:
+- `views7D`
+- `favorites7D`
+- `sales7D`
 
-## Trending Logic
-
-Current formula:
+Trending uses recent business signals instead of only category:
 
 ```text
 trending_score =
@@ -172,14 +422,18 @@ trending_score =
 ```
 
 Notes:
-- `category` is for browse/filtering
-- `tags` are for exact tag filtering
-- `rank` is now an editorial boost and tie-breaker
-- `Top Trending` mixes categories and applies a category cap so one category does not take over the whole shelf
+- `category` is mainly for browsing and filtering
+- `tags` are for exact-match filtering
+- `rank` acts as an editorial boost and tie-breaker
+- homepage trending can mix categories instead of showing only one category
 
-## Concurrency Notes
+## Notes
 
-- HTTP requests are handled concurrently by Go’s server
-- SQLite is used in WAL mode with a busy timeout
-- writes are done transactionally so views, favorites, and sales update safely
-- this is a good starter setup for a small product; for heavy write traffic, PostgreSQL is still the next step
+- Public APIs only return active stickers.
+- Admin APIs can return inactive stickers.
+- In MongoDB, your business sticker ID is stored in the `id` field, while Mongo also creates its own `_id`.
+- When searching in MongoDB Compass or `mongosh`, search with:
+
+```json
+{ "id": "stk_001" }
+```
