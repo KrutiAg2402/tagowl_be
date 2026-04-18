@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"tagowl/backend/internal/catalog"
+	cataloghandler "tagowl/backend/internal/catalog/handler"
+	mongorepo "tagowl/backend/internal/catalog/repository/mongo"
 )
 
 func main() {
@@ -20,7 +22,7 @@ func main() {
 	mongoCollection := getEnv("MONGODB_COLLECTION", "producer")
 	seedFile := getEnv("STICKER_SEED_FILE", "data/stickers.json")
 
-	repo, err := catalog.NewMongoRepository(mongoURI, mongoDatabase, mongoCollection, seedFile)
+	repo, err := mongorepo.New(mongoURI, mongoDatabase, mongoCollection, seedFile)
 	if err != nil {
 		log.Fatalf("load sticker catalog: %v", err)
 	}
@@ -28,7 +30,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              ":" + port,
-		Handler:           catalog.NewHandler(repo),
+		Handler:           cataloghandler.New(repo),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
