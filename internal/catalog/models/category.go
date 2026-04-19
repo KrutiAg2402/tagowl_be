@@ -21,9 +21,9 @@ type CategoryListResponse struct {
 }
 
 type AdminCategoryListResponse struct {
-	Items           []Category `json:"items"`
-	Count           int        `json:"count"`
-	IncludeInactive bool       `json:"includeInactive"`
+	Items           []Category         `json:"items"`
+	Pagination      PaginationResponse `json:"pagination"`
+	IncludeInactive bool               `json:"includeInactive"`
 }
 
 type AdminCreateCategoryRequest struct {

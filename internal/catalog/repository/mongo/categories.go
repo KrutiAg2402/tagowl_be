@@ -20,13 +20,26 @@ func (r *Repository) ListCategories(ctx context.Context) ([]catalog.Category, er
 	return items, nil
 }
 
-func (r *Repository) AdminListCategories(ctx context.Context, includeInactive bool) ([]catalog.Category, error) {
-	items, err := r.fetchCategories(ctx, includeInactive)
+func (r *Repository) AdminListCategories(ctx context.Context, includeInactive bool, pagination catalog.Pagination) ([]catalog.Category, int64, error) {
+	filter := buildCategoryFilter(includeInactive)
+
+	total, err := r.categories.CountDocuments(ctx, filter)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	sortCategories(items)
-	return items, nil
+
+	findOptions := options.Find().
+		SetProjection(bson.M{"_id": 0}).
+		SetSort(bson.D{{Key: "rank", Value: 1}, {Key: "name", Value: 1}}).
+		SetSkip(int64(pagination.Offset)).
+		SetLimit(int64(pagination.Limit))
+
+	items, err := r.fetchCategoriesByFilter(ctx, filter, findOptions)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return items, total, nil
 }
 
 func (r *Repository) AdminGetCategoryByID(ctx context.Context, id string) (catalog.Category, bool, error) {
@@ -121,12 +134,20 @@ func (r *Repository) AdminDeleteCategory(ctx context.Context, id string) (catalo
 }
 
 func (r *Repository) fetchCategories(ctx context.Context, includeInactive bool) ([]catalog.Category, error) {
-	filter := bson.M{}
-	if !includeInactive {
-		filter["isActive"] = true
+	filter := buildCategoryFilter(includeInactive)
+	findOptions := options.Find().
+		SetProjection(bson.M{"_id": 0}).
+		SetSort(bson.D{{Key: "rank", Value: 1}, {Key: "name", Value: 1}})
+
+	return r.fetchCategoriesByFilter(ctx, filter, findOptions)
+}
+
+func (r *Repository) fetchCategoriesByFilter(ctx context.Context, filter bson.M, findOptions ...*options.FindOptions) ([]catalog.Category, error) {
+	if len(findOptions) == 0 || findOptions[0] == nil {
+		findOptions = []*options.FindOptions{options.Find().SetProjection(bson.M{"_id": 0})}
 	}
 
-	cursor, err := r.categories.Find(ctx, filter, options.Find().SetProjection(bson.M{"_id": 0}))
+	cursor, err := r.categories.Find(ctx, filter, findOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -138,6 +159,14 @@ func (r *Repository) fetchCategories(ctx context.Context, includeInactive bool) 
 	}
 
 	return items, nil
+}
+
+func buildCategoryFilter(includeInactive bool) bson.M {
+	filter := bson.M{}
+	if !includeInactive {
+		filter["isActive"] = true
+	}
+	return filter
 }
 
 func (r *Repository) fetchCategoryByID(ctx context.Context, id string, includeInactive bool) (catalog.Category, bool, error) {

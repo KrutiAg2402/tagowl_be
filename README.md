@@ -106,6 +106,28 @@ Admin APIs:
 - `PATCH /api/v1/admin/stickers/{id}/status`
 - `DELETE /api/v1/admin/stickers/{id}`
 
+## Swagger / OpenAPI
+
+The first Swagger spec covers the public sticker APIs:
+
+- [docs/openapi/public-stickers.yaml](/Users/agarwalkruti/Documents/tagowl_backend/backend/docs/openapi/public-stickers.yaml)
+
+It currently documents:
+- `GET /api/v1/stickers`
+- `GET /api/v1/stickers/{id}`
+- `POST /api/v1/stickers/{id}/view`
+- `POST /api/v1/stickers/{id}/favorite`
+- `DELETE /api/v1/stickers/{id}/favorite`
+
+You can paste the YAML into Swagger Editor or import it into Postman/Insomnia.
+
+Quick YAML parse check:
+
+```bash
+cd "/Users/agarwalkruti/Documents/tagowl_backend/backend"
+ruby -e 'require "yaml"; YAML.load_file("docs/openapi/public-stickers.yaml"); puts "ok"'
+```
+
 ## How To Test Category APIs
 
 Start the API first:
@@ -136,7 +158,7 @@ curl "$BASE_URL/api/v1/categories"
 List admin categories:
 
 ```bash
-curl "$BASE_URL/api/v1/admin/categories"
+curl "$BASE_URL/api/v1/admin/categories?page=1&limit=20"
 ```
 
 Create a test category. The timestamp keeps the ID and name unique if you run this test more than once.
@@ -383,14 +405,35 @@ These APIs are for your business operations.
 
 By default, this returns active categories.
 
+Query params:
+- `includeInactive`
+- `page`
+- `limit`
+
 ```bash
-curl "http://localhost:8080/api/v1/admin/categories"
+curl "http://localhost:8080/api/v1/admin/categories?page=1&limit=20"
 ```
 
 Include inactive and soft-deleted categories:
 
 ```bash
-curl "http://localhost:8080/api/v1/admin/categories?includeInactive=true"
+curl "http://localhost:8080/api/v1/admin/categories?includeInactive=true&page=1&limit=20"
+```
+
+Response includes pagination metadata:
+
+```json
+{
+  "items": [],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "count": 0,
+    "total": 0,
+    "totalPages": 0
+  },
+  "includeInactive": false
+}
 ```
 
 ### 11. Create Category
@@ -470,14 +513,35 @@ curl -X DELETE "http://localhost:8080/api/v1/admin/categories/cat_animals"
 
 By default, this returns active stickers.
 
+Query params:
+- `includeInactive`
+- `page`
+- `limit`
+
 ```bash
-curl "http://localhost:8080/api/v1/admin/stickers"
+curl "http://localhost:8080/api/v1/admin/stickers?page=1&limit=20"
 ```
 
 Include inactive and soft-deleted stickers:
 
 ```bash
-curl "http://localhost:8080/api/v1/admin/stickers?includeInactive=true"
+curl "http://localhost:8080/api/v1/admin/stickers?includeInactive=true&page=1&limit=20"
+```
+
+Response includes pagination metadata:
+
+```json
+{
+  "items": [],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "count": 0,
+    "total": 0,
+    "totalPages": 0
+  },
+  "includeInactive": false
+}
 ```
 
 ### 17. Create Sticker

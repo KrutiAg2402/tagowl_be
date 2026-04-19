@@ -9,24 +9,36 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func (r *Repository) AdminList(ctx context.Context, includeInactive bool) ([]catalog.Sticker, error) {
+func (r *Repository) AdminList(ctx context.Context, includeInactive bool, pagination catalog.Pagination) ([]catalog.Sticker, int64, error) {
 	filter := bson.M{}
 	if !includeInactive {
 		filter["isActive"] = true
 	}
 
-	items, err := r.fetchStickers(ctx, filter)
+	total, err := r.stickers.CountDocuments(ctx, filter)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+
+	findOptions := options.Find().
+		SetProjection(bson.M{"_id": 0}).
+		SetSort(bson.D{{Key: "updatedAt", Value: -1}}).
+		SetSkip(int64(pagination.Offset)).
+		SetLimit(int64(pagination.Limit))
+
+	items, err := r.fetchStickers(ctx, filter, findOptions)
+	if err != nil {
+		return nil, 0, err
 	}
 	items, err = r.attachMetrics(ctx, items)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	sortAdminStickers(items)
-	return items, nil
+
+	return items, total, nil
 }
 
 func (r *Repository) AdminGetByID(ctx context.Context, id string) (catalog.Sticker, bool, error) {

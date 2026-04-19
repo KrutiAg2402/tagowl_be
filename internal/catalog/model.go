@@ -2,6 +2,9 @@ package catalog
 
 import "tagowl/backend/internal/catalog/models"
 
+type Pagination = models.Pagination
+type PaginationResponse = models.PaginationResponse
+
 type Sticker = models.Sticker
 type StickerFilter = models.StickerFilter
 type ListResponse = models.ListResponse

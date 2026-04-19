@@ -14,6 +14,13 @@ func (r *Repository) ensureIndexes(ctx context.Context) error {
 		{Keys: bson.D{{Key: "id", Value: 1}}, Options: options.Index().SetUnique(true)},
 		{Keys: bson.D{{Key: "category", Value: 1}}},
 		{Keys: bson.D{{Key: "isActive", Value: 1}}},
+		{Keys: bson.D{{Key: "isActive", Value: 1}, {Key: "rank", Value: 1}, {Key: "name", Value: 1}}},
+		{Keys: bson.D{{Key: "isActive", Value: 1}, {Key: "createdAt", Value: -1}}},
+		{Keys: bson.D{{Key: "isActive", Value: 1}, {Key: "price", Value: 1}}},
+		{Keys: bson.D{{Key: "isActive", Value: 1}, {Key: "rating", Value: -1}, {Key: "reviewCount", Value: -1}}},
+		{Keys: bson.D{{Key: "isActive", Value: 1}, {Key: "updatedAt", Value: -1}}},
+		{Keys: bson.D{{Key: "isActive", Value: 1}, {Key: "category", Value: 1}}},
+		{Keys: bson.D{{Key: "isActive", Value: 1}, {Key: "tags", Value: 1}}},
 	}
 	if _, err := r.stickers.Indexes().CreateMany(ctx, models); err != nil {
 		return fmt.Errorf("create sticker indexes: %w", err)

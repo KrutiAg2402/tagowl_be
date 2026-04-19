@@ -9,22 +9,7 @@ import (
 
 func (r *Repository) List(ctx context.Context, filter catalog.StickerFilter) ([]catalog.Sticker, error) {
 	normalized := catalog.NormalizeFilter(filter)
-	items, err := r.fetchStickers(ctx, buildPublicStickerFilter(normalized.Category, normalized.Tag))
-	if err != nil {
-		return nil, err
-	}
-
-	items, err = r.attachMetrics(ctx, items)
-	if err != nil {
-		return nil, err
-	}
-
-	sortStickers(items, normalized.Sort)
-	if len(items) > normalized.Limit {
-		items = items[:normalized.Limit]
-	}
-
-	return items, nil
+	return r.fetchOptimizedPublicStickers(ctx, buildPublicStickerFilter(normalized.Category, normalized.Tag), normalized.Sort, normalized.Limit)
 }
 
 func (r *Repository) GetByID(ctx context.Context, id string) (catalog.Sticker, bool, error) {
@@ -41,19 +26,6 @@ func (r *Repository) GetByID(ctx context.Context, id string) (catalog.Sticker, b
 }
 
 func (r *Repository) Home(ctx context.Context, limit int) (catalog.HomeResponse, error) {
-	items, err := r.fetchStickers(ctx, buildPublicStickerFilter("", ""))
-	if err != nil {
-		return catalog.HomeResponse{}, err
-	}
-	if len(items) == 0 {
-		return catalog.HomeResponse{}, errors.New("catalog is empty")
-	}
-
-	items, err = r.attachMetrics(ctx, items)
-	if err != nil {
-		return catalog.HomeResponse{}, err
-	}
-
 	normalizedLimit := limit
 	if normalizedLimit <= 0 {
 		normalizedLimit = catalog.DefaultHomeLimit
@@ -71,30 +43,31 @@ func (r *Repository) Home(ctx context.Context, limit int) (catalog.HomeResponse,
 		categories = append(categories, category.Name)
 	}
 	if len(categories) == 0 {
-		categorySet := make(map[string]struct{})
-		for _, sticker := range items {
-			categorySet[sticker.Category] = struct{}{}
+		categories, err = r.fetchDistinctPublicStickerCategories(ctx)
+		if err != nil {
+			return catalog.HomeResponse{}, err
 		}
-		for category := range categorySet {
-			categories = append(categories, category)
-		}
-		sortStrings(categories)
 	}
 
-	topTrending := cloneStickers(items)
-	sortStickers(topTrending, "trending")
+	filter := buildPublicStickerFilter("", "")
+
+	topTrending, err := r.fetchOptimizedPublicStickers(ctx, filter, "trending", publicHomeCandidateLimit(normalizedLimit))
+	if err != nil {
+		return catalog.HomeResponse{}, err
+	}
+	if len(topTrending) == 0 {
+		return catalog.HomeResponse{}, errors.New("catalog is empty")
+	}
 	topTrending = limitWithCategoryDiversity(topTrending, normalizedLimit, trendingCategoryCap)
 
-	newArrivals := cloneStickers(items)
-	sortStickers(newArrivals, "newest")
-	if len(newArrivals) > normalizedLimit {
-		newArrivals = newArrivals[:normalizedLimit]
+	newArrivals, err := r.fetchOptimizedPublicStickers(ctx, filter, "newest", normalizedLimit)
+	if err != nil {
+		return catalog.HomeResponse{}, err
 	}
 
-	topRated := cloneStickers(items)
-	sortStickers(topRated, "top_rated")
-	if len(topRated) > normalizedLimit {
-		topRated = topRated[:normalizedLimit]
+	topRated, err := r.fetchOptimizedPublicStickers(ctx, filter, "top_rated", normalizedLimit)
+	if err != nil {
+		return catalog.HomeResponse{}, err
 	}
 
 	return catalog.HomeResponse{
@@ -105,4 +78,15 @@ func (r *Repository) Home(ctx context.Context, limit int) (catalog.HomeResponse,
 			{Key: "top-rated", Title: "Top Rated", Stickers: topRated},
 		},
 	}, nil
+}
+
+func publicHomeCandidateLimit(limit int) int {
+	candidateLimit := limit * 5
+	if candidateLimit < 40 {
+		candidateLimit = 40
+	}
+	if candidateLimit > catalog.MaxListLimit {
+		candidateLimit = catalog.MaxListLimit
+	}
+	return candidateLimit
 }

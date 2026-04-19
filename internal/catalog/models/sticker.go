@@ -39,9 +39,9 @@ type ListResponse struct {
 }
 
 type AdminListResponse struct {
-	Items           []Sticker `json:"items"`
-	Count           int       `json:"count"`
-	IncludeInactive bool      `json:"includeInactive"`
+	Items           []Sticker          `json:"items"`
+	Pagination      PaginationResponse `json:"pagination"`
+	IncludeInactive bool               `json:"includeInactive"`
 }
 
 type AdminCreateStickerRequest struct {
