@@ -6,12 +6,13 @@ import (
 )
 
 const (
-	DefaultListLimit      = 20
-	MaxListLimit          = 100
-	DefaultHomeLimit      = 4
+	DefaultListLimit = 20
+	MaxListLimit     = 100
+	DefaultHomeLimit = 4
 )
 
 type Repository interface {
+	ListCategories(context.Context) ([]Category, error)
 	List(context.Context, StickerFilter) ([]Sticker, error)
 	GetByID(context.Context, string) (Sticker, bool, error)
 	Home(context.Context, int) (HomeResponse, error)
@@ -19,6 +20,12 @@ type Repository interface {
 	AddFavorite(context.Context, string, string) (EventResponse, error)
 	RemoveFavorite(context.Context, string, string) (EventResponse, error)
 	CreateOrder(context.Context, OrderCreateRequest) (OrderResponse, error)
+	AdminListCategories(context.Context, bool) ([]Category, error)
+	AdminGetCategoryByID(context.Context, string) (Category, bool, error)
+	AdminCreateCategory(context.Context, AdminCreateCategoryRequest) (Category, error)
+	AdminUpdateCategory(context.Context, string, AdminUpdateCategoryRequest) (Category, error)
+	AdminUpdateCategoryStatus(context.Context, string, AdminUpdateCategoryStatusRequest) (Category, error)
+	AdminDeleteCategory(context.Context, string) (Category, error)
 	AdminList(context.Context, bool) ([]Sticker, error)
 	AdminGetByID(context.Context, string) (Sticker, bool, error)
 	AdminCreateSticker(context.Context, AdminCreateStickerRequest) (Sticker, error)

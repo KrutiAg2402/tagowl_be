@@ -15,14 +15,15 @@ import (
 )
 
 const (
-	defaultConnectTimeout  = 10 * time.Second
-	trendingCategoryCap    = 2
-	freshnessWindowInDays  = 30
+	defaultConnectTimeout = 10 * time.Second
+	trendingCategoryCap   = 2
+	freshnessWindowInDays = 30
 )
 
 type Repository struct {
 	client       *mongo.Client
 	stickers     *mongo.Collection
+	categories   *mongo.Collection
 	dailyMetrics *mongo.Collection
 	viewEvents   *mongo.Collection
 	favorites    *mongo.Collection
@@ -51,6 +52,7 @@ func New(uri, databaseName, collectionName, seedPath string) (*Repository, error
 	repo := &Repository{
 		client:       client,
 		stickers:     database.Collection(collectionName),
+		categories:   database.Collection(collectionName + "_categories"),
 		dailyMetrics: database.Collection(collectionName + "_daily_metrics"),
 		viewEvents:   database.Collection(collectionName + "_view_events"),
 		favorites:    database.Collection(collectionName + "_favorites"),
@@ -63,6 +65,11 @@ func New(uri, databaseName, collectionName, seedPath string) (*Repository, error
 	}
 
 	if err := repo.seedIfEmpty(ctx, seedPath); err != nil {
+		_ = repo.Close()
+		return nil, err
+	}
+
+	if err := repo.seedCategoriesIfEmpty(ctx); err != nil {
 		_ = repo.Close()
 		return nil, err
 	}
@@ -126,6 +133,53 @@ func (r *Repository) seedIfEmpty(ctx context.Context, seedPath string) error {
 	}
 	if _, err := r.dailyMetrics.InsertMany(ctx, metricDocs); err != nil {
 		return fmt.Errorf("seed metrics: %w", err)
+	}
+
+	return nil
+}
+
+func (r *Repository) seedCategoriesIfEmpty(ctx context.Context) error {
+	count, err := r.categories.CountDocuments(ctx, map[string]any{})
+	if err != nil {
+		return fmt.Errorf("count categories: %w", err)
+	}
+	if count > 0 {
+		return nil
+	}
+
+	values, err := r.stickers.Distinct(ctx, "category", map[string]any{})
+	if err != nil {
+		return fmt.Errorf("read sticker categories: %w", err)
+	}
+
+	categories := uniqueCategoryNames(values)
+	if len(categories) == 0 {
+		return nil
+	}
+
+	now := time.Now().UTC()
+	docs := make([]interface{}, 0, len(categories))
+	usedIDs := make(map[string]int, len(categories))
+	for index, name := range categories {
+		id := categoryIDFromName(name)
+		usedIDs[id]++
+		if usedIDs[id] > 1 {
+			id = fmt.Sprintf("%s-%d", id, usedIDs[id])
+		}
+
+		docs = append(docs, catalog.Category{
+			ID:             id,
+			Name:           name,
+			NormalizedName: normalizeCategoryName(name),
+			Rank:           index + 1,
+			IsActive:       true,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		})
+	}
+
+	if _, err := r.categories.InsertMany(ctx, docs); err != nil {
+		return fmt.Errorf("seed categories: %w", err)
 	}
 
 	return nil

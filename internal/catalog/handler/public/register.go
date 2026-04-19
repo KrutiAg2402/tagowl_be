@@ -15,6 +15,7 @@ func Register(mux *http.ServeMux, repo catalog.Repository) {
 
 	mux.HandleFunc("/healthz", handler.handleHealth)
 	mux.HandleFunc("/api/v1/home", handler.handleHome)
+	mux.HandleFunc("/api/v1/categories", handler.handleListCategories)
 	mux.HandleFunc("/api/v1/stickers", handler.handleListStickers)
 	mux.HandleFunc("/api/v1/stickers/", handler.handleStickerRoutes)
 	mux.HandleFunc("/api/v1/orders", handler.handleOrders)

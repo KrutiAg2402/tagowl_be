@@ -6,7 +6,7 @@ It provides:
 - public catalog APIs for the website frontend
 - event APIs for views and favorites
 - order APIs for recording purchases
-- admin APIs for creating, updating, listing, and deleting stickers
+- admin APIs for creating, updating, listing, and deleting categories and stickers
 
 The backend uses MongoDB with these defaults:
 - Mongo URI: `mongodb://localhost:27017/`
@@ -17,6 +17,7 @@ On first startup, the server:
 - connects to MongoDB
 - creates indexes
 - seeds the `producer` collection from [data/stickers.json](/Users/agarwalkruti/Documents/New project/tagowl/backend/data/stickers.json:1) if the collection is empty
+- seeds `producer_categories` from the sticker category names if the category collection is empty
 
 ## Prerequisites
 
@@ -28,7 +29,7 @@ On first startup, the server:
 Start MongoDB first, then run:
 
 ```bash
-cd "/Users/agarwalkruti/Documents/New project/tagowl/backend"
+cd "/Users/agarwalkruti/Documents/tagowl_backend/backend"
 go run ./cmd/api
 ```
 
@@ -56,7 +57,7 @@ Expected response:
 You can override the defaults like this:
 
 ```bash
-cd "/Users/agarwalkruti/Documents/New project/tagowl/backend"
+cd "/Users/agarwalkruti/Documents/tagowl_backend/backend"
 PORT=8081 \
 MONGODB_URI="mongodb://localhost:27017/" \
 MONGODB_DATABASE="tag_owl" \
@@ -80,6 +81,7 @@ STICKER_SEED_FILE=data/stickers.json
 Public APIs:
 - `GET /healthz`
 - `GET /api/v1/home`
+- `GET /api/v1/categories`
 - `GET /api/v1/stickers`
 - `GET /api/v1/stickers/{id}`
 
@@ -90,6 +92,12 @@ Engagement and order APIs:
 - `POST /api/v1/orders`
 
 Admin APIs:
+- `GET /api/v1/admin/categories`
+- `POST /api/v1/admin/categories`
+- `GET /api/v1/admin/categories/{id}`
+- `PATCH /api/v1/admin/categories/{id}`
+- `PATCH /api/v1/admin/categories/{id}/status`
+- `DELETE /api/v1/admin/categories/{id}`
 - `GET /api/v1/admin/stickers`
 - `POST /api/v1/admin/stickers`
 - `GET /api/v1/admin/stickers/{id}`
@@ -97,6 +105,124 @@ Admin APIs:
 - `PATCH /api/v1/admin/stickers/{id}/price`
 - `PATCH /api/v1/admin/stickers/{id}/status`
 - `DELETE /api/v1/admin/stickers/{id}`
+
+## How To Test Category APIs
+
+Start the API first:
+
+```bash
+cd "/Users/agarwalkruti/Documents/tagowl_backend/backend"
+GOCACHE=/tmp/tagowl-go-build go run ./cmd/api
+```
+
+In another terminal, set a base URL:
+
+```bash
+BASE_URL="http://localhost:8080"
+```
+
+Check that the server is running:
+
+```bash
+curl "$BASE_URL/healthz"
+```
+
+List public active categories:
+
+```bash
+curl "$BASE_URL/api/v1/categories"
+```
+
+List admin categories:
+
+```bash
+curl "$BASE_URL/api/v1/admin/categories"
+```
+
+Create a test category. The timestamp keeps the ID and name unique if you run this test more than once.
+
+```bash
+CATEGORY_SUFFIX="$(date +%s)"
+CATEGORY_ID="cat_test_${CATEGORY_SUFFIX}"
+CATEGORY_NAME="Test Packs ${CATEGORY_SUFFIX}"
+
+curl -X POST "$BASE_URL/api/v1/admin/categories" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"id\": \"${CATEGORY_ID}\",
+    \"name\": \"${CATEGORY_NAME}\",
+    \"description\": \"Temporary category for API testing\",
+    \"imageUrl\": \"https://cdn.example.com/categories/test.png\",
+    \"rank\": 99,
+    \"isActive\": true
+  }"
+```
+
+Fetch the category by ID:
+
+```bash
+curl "$BASE_URL/api/v1/admin/categories/$CATEGORY_ID"
+```
+
+Update category metadata:
+
+```bash
+curl -X PATCH "$BASE_URL/api/v1/admin/categories/$CATEGORY_ID" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"description\": \"Updated by the category API test\",
+    \"rank\": 5
+  }"
+```
+
+Rename the category:
+
+```bash
+curl -X PATCH "$BASE_URL/api/v1/admin/categories/$CATEGORY_ID" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"name\": \"${CATEGORY_NAME} Updated\"
+  }"
+```
+
+Deactivate the category. This hides it from the public category list.
+
+```bash
+curl -X PATCH "$BASE_URL/api/v1/admin/categories/$CATEGORY_ID/status" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "isActive": false
+  }'
+```
+
+Confirm inactive categories are only visible to admin calls with `includeInactive=true`:
+
+```bash
+curl "$BASE_URL/api/v1/categories"
+curl "$BASE_URL/api/v1/admin/categories?includeInactive=true"
+```
+
+Reactivate the category:
+
+```bash
+curl -X PATCH "$BASE_URL/api/v1/admin/categories/$CATEGORY_ID/status" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "isActive": true
+  }'
+```
+
+Soft delete the category:
+
+```bash
+curl -X DELETE "$BASE_URL/api/v1/admin/categories/$CATEGORY_ID"
+```
+
+Confirm it is still available in the admin inactive list:
+
+```bash
+curl "$BASE_URL/api/v1/admin/categories?includeInactive=true"
+```
 
 ## Public APIs
 
@@ -126,7 +252,17 @@ Query params:
 curl "http://localhost:8080/api/v1/home?limit=4"
 ```
 
-### 3. List Stickers
+### 3. List Categories
+
+`GET /api/v1/categories`
+
+Returns active categories for frontend filters and navigation.
+
+```bash
+curl "http://localhost:8080/api/v1/categories"
+```
+
+### 4. List Stickers
 
 `GET /api/v1/stickers`
 
@@ -159,7 +295,7 @@ curl "http://localhost:8080/api/v1/stickers?category=Animals&sort=trending&limit
 curl "http://localhost:8080/api/v1/stickers?tag=cute&sort=top_rated&limit=12"
 ```
 
-### 4. Get Sticker By ID
+### 5. Get Sticker By ID
 
 `GET /api/v1/stickers/{id}`
 
@@ -177,7 +313,7 @@ This returns the sticker plus live derived metrics like:
 
 ## Engagement And Order APIs
 
-### 5. Record A View
+### 6. Record A View
 
 `POST /api/v1/stickers/{id}/view`
 
@@ -191,7 +327,7 @@ curl -X POST "http://localhost:8080/api/v1/stickers/stk_001/view" \
   }'
 ```
 
-### 6. Add Favorite
+### 7. Add Favorite
 
 `POST /api/v1/stickers/{id}/favorite`
 
@@ -203,7 +339,7 @@ curl -X POST "http://localhost:8080/api/v1/stickers/stk_001/favorite" \
   }'
 ```
 
-### 7. Remove Favorite
+### 8. Remove Favorite
 
 `DELETE /api/v1/stickers/{id}/favorite`
 
@@ -213,7 +349,7 @@ You can send `actorKey` in the query string:
 curl -X DELETE "http://localhost:8080/api/v1/stickers/stk_001/favorite?actorKey=user-123"
 ```
 
-### 8. Create Order
+### 9. Create Order
 
 `POST /api/v1/orders`
 
@@ -241,7 +377,94 @@ curl -X POST "http://localhost:8080/api/v1/orders" \
 
 These APIs are for your business operations.
 
-### 9. List Admin Stickers
+### 10. List Admin Categories
+
+`GET /api/v1/admin/categories`
+
+By default, this returns active categories.
+
+```bash
+curl "http://localhost:8080/api/v1/admin/categories"
+```
+
+Include inactive and soft-deleted categories:
+
+```bash
+curl "http://localhost:8080/api/v1/admin/categories?includeInactive=true"
+```
+
+### 11. Create Category
+
+`POST /api/v1/admin/categories`
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/admin/categories" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "cat_animals",
+    "name": "Animals",
+    "description": "Animal-themed stickers",
+    "imageUrl": "https://cdn.example.com/categories/animals.png",
+    "rank": 1,
+    "isActive": true
+  }'
+```
+
+### 12. Get Admin Category By ID
+
+`GET /api/v1/admin/categories/{id}`
+
+```bash
+curl "http://localhost:8080/api/v1/admin/categories/cat_animals"
+```
+
+### 13. Update Category
+
+`PATCH /api/v1/admin/categories/{id}`
+
+Use this for partial updates to category fields:
+- `name`
+- `description`
+- `imageUrl`
+- `rank`
+- `isActive`
+
+When `name` changes, stickers using the old category name are renamed to the new one.
+
+```bash
+curl -X PATCH "http://localhost:8080/api/v1/admin/categories/cat_animals" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Pets",
+    "rank": 2
+  }'
+```
+
+### 14. Update Category Status
+
+`PATCH /api/v1/admin/categories/{id}/status`
+
+Set `isActive` to `false` to hide a category from public category APIs.
+
+```bash
+curl -X PATCH "http://localhost:8080/api/v1/admin/categories/cat_animals/status" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "isActive": false
+  }'
+```
+
+### 15. Soft Delete Category
+
+`DELETE /api/v1/admin/categories/{id}`
+
+This is a soft delete. The category is marked inactive instead of being permanently removed from MongoDB.
+
+```bash
+curl -X DELETE "http://localhost:8080/api/v1/admin/categories/cat_animals"
+```
+
+### 16. List Admin Stickers
 
 `GET /api/v1/admin/stickers`
 
@@ -257,7 +480,7 @@ Include inactive and soft-deleted stickers:
 curl "http://localhost:8080/api/v1/admin/stickers?includeInactive=true"
 ```
 
-### 10. Create Sticker
+### 17. Create Sticker
 
 `POST /api/v1/admin/stickers`
 
@@ -281,7 +504,7 @@ curl -X POST "http://localhost:8080/api/v1/admin/stickers" \
   }'
 ```
 
-### 11. Get Admin Sticker By ID
+### 18. Get Admin Sticker By ID
 
 `GET /api/v1/admin/stickers/{id}`
 
@@ -289,7 +512,7 @@ curl -X POST "http://localhost:8080/api/v1/admin/stickers" \
 curl "http://localhost:8080/api/v1/admin/stickers/stk_admin_demo_001"
 ```
 
-### 12. Update Sticker Metadata
+### 19. Update Sticker Metadata
 
 `PATCH /api/v1/admin/stickers/{id}`
 
@@ -318,7 +541,7 @@ curl -X PATCH "http://localhost:8080/api/v1/admin/stickers/stk_admin_demo_001" \
   }'
 ```
 
-### 13. Update Price Only
+### 20. Update Price Only
 
 `PATCH /api/v1/admin/stickers/{id}/price`
 
@@ -331,7 +554,7 @@ curl -X PATCH "http://localhost:8080/api/v1/admin/stickers/stk_admin_demo_001/pr
   }'
 ```
 
-### 14. Update Status
+### 21. Update Status
 
 `PATCH /api/v1/admin/stickers/{id}/status`
 
@@ -345,7 +568,7 @@ curl -X PATCH "http://localhost:8080/api/v1/admin/stickers/stk_admin_demo_001/st
   }'
 ```
 
-### 15. Soft Delete Sticker
+### 22. Soft Delete Sticker
 
 `DELETE /api/v1/admin/stickers/{id}`
 
@@ -353,6 +576,23 @@ This is a soft delete. The sticker is marked inactive instead of being permanent
 
 ```bash
 curl -X DELETE "http://localhost:8080/api/v1/admin/stickers/stk_admin_demo_001"
+```
+
+## Category Schema
+
+Stored category document:
+
+```json
+{
+  "id": "cat_animals",
+  "name": "Animals",
+  "description": "Animal-themed stickers",
+  "imageUrl": "https://cdn.example.com/categories/animals.png",
+  "rank": 1,
+  "isActive": true,
+  "createdAt": "2026-04-10T09:00:00Z",
+  "updatedAt": "2026-04-10T09:00:00Z"
+}
 ```
 
 ## Sticker Schema
@@ -396,6 +636,7 @@ Main collection:
 - `producer`
 
 Supporting collections:
+- `producer_categories`
 - `producer_daily_metrics`
 - `producer_view_events`
 - `producer_favorites`

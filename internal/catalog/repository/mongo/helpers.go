@@ -63,6 +63,41 @@ func buildStickerFromCreateRequest(request catalog.AdminCreateStickerRequest, no
 	return sticker, nil
 }
 
+func buildCategoryFromCreateRequest(request catalog.AdminCreateCategoryRequest, now time.Time) (catalog.Category, error) {
+	name := strings.TrimSpace(request.Name)
+	if name == "" {
+		return catalog.Category{}, catalog.ErrInvalidCategory
+	}
+
+	id := strings.TrimSpace(request.ID)
+	if id == "" {
+		id = categoryIDFromName(name)
+	}
+
+	isActive := true
+	if request.IsActive != nil {
+		isActive = *request.IsActive
+	}
+
+	category := catalog.Category{
+		ID:             id,
+		Name:           name,
+		NormalizedName: normalizeCategoryName(name),
+		Description:    strings.TrimSpace(request.Description),
+		ImageURL:       strings.TrimSpace(request.ImageURL),
+		Rank:           request.Rank,
+		IsActive:       isActive,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if !isActive {
+		deletedAt := now
+		category.DeletedAt = &deletedAt
+	}
+
+	return category, nil
+}
+
 func buildStickerPatch(request catalog.AdminUpdateStickerRequest, now time.Time) (bson.M, bson.M, error) {
 	update := bson.M{"updatedAt": now}
 	unset := bson.M{}
@@ -147,6 +182,48 @@ func buildStickerPatch(request catalog.AdminUpdateStickerRequest, now time.Time)
 	return update, unset, nil
 }
 
+func buildCategoryPatch(request catalog.AdminUpdateCategoryRequest, now time.Time) (bson.M, bson.M, error) {
+	update := bson.M{"updatedAt": now}
+	unset := bson.M{}
+	changed := false
+
+	if request.Name != nil {
+		name := strings.TrimSpace(*request.Name)
+		if name == "" {
+			return nil, nil, catalog.ErrInvalidCategory
+		}
+		update["name"] = name
+		update["normalizedName"] = normalizeCategoryName(name)
+		changed = true
+	}
+	if request.Description != nil {
+		update["description"] = strings.TrimSpace(*request.Description)
+		changed = true
+	}
+	if request.ImageURL != nil {
+		update["imageUrl"] = strings.TrimSpace(*request.ImageURL)
+		changed = true
+	}
+	if request.Rank != nil {
+		update["rank"] = *request.Rank
+		changed = true
+	}
+	if request.IsActive != nil {
+		update["isActive"] = *request.IsActive
+		if *request.IsActive {
+			unset["deletedAt"] = ""
+		} else {
+			update["deletedAt"] = now
+		}
+		changed = true
+	}
+
+	if !changed {
+		delete(update, "updatedAt")
+	}
+	return update, unset, nil
+}
+
 func normalizeOrderItems(items []catalog.OrderItemRequest) ([]catalog.OrderItemRequest, int, error) {
 	if len(items) == 0 {
 		return nil, 0, catalog.ErrEmptyOrder
@@ -210,6 +287,59 @@ func normalizeTags(tags []string) []string {
 	return normalized
 }
 
+func uniqueCategoryNames(values []interface{}) []string {
+	seen := make(map[string]struct{}, len(values))
+	categories := make([]string, 0, len(values))
+	for _, value := range values {
+		name, ok := value.(string)
+		if !ok {
+			continue
+		}
+		name = strings.TrimSpace(name)
+		normalized := normalizeCategoryName(name)
+		if normalized == "" {
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		categories = append(categories, name)
+	}
+	sortStrings(categories)
+	return categories
+}
+
+func normalizeCategoryName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func categoryIDFromName(name string) string {
+	normalized := normalizeCategoryName(name)
+
+	var builder strings.Builder
+	lastDash := false
+	for _, value := range normalized {
+		isLetter := value >= 'a' && value <= 'z'
+		isDigit := value >= '0' && value <= '9'
+		if isLetter || isDigit {
+			builder.WriteRune(value)
+			lastDash = false
+			continue
+		}
+		if !lastDash && builder.Len() > 0 {
+			builder.WriteRune('-')
+			lastDash = true
+		}
+	}
+
+	slug := strings.Trim(builder.String(), "-")
+	if slug == "" {
+		slug = strings.ReplaceAll(uuid.NewString()[:8], "-", "")
+	}
+	return "cat_" + slug
+}
+
 func sortStrings(items []string) {
 	if len(items) < 2 {
 		return
@@ -247,6 +377,18 @@ func sortAdminStickers(items []catalog.Sticker) {
 			}
 		}
 	}
+}
+
+func sortCategories(items []catalog.Category) {
+	if len(items) < 2 {
+		return
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Rank == items[j].Rank {
+			return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+		}
+		return items[i].Rank < items[j].Rank
+	})
 }
 
 func startOfDayUTC(value time.Time) time.Time {

@@ -62,16 +62,24 @@ func (r *Repository) Home(ctx context.Context, limit int) (catalog.HomeResponse,
 		normalizedLimit = catalog.MaxListLimit
 	}
 
-	categorySet := make(map[string]struct{})
-	for _, sticker := range items {
-		categorySet[sticker.Category] = struct{}{}
+	categoryItems, err := r.ListCategories(ctx)
+	if err != nil {
+		return catalog.HomeResponse{}, err
 	}
-
-	categories := make([]string, 0, len(categorySet))
-	for category := range categorySet {
-		categories = append(categories, category)
+	categories := make([]string, 0, len(categoryItems))
+	for _, category := range categoryItems {
+		categories = append(categories, category.Name)
 	}
-	sortStrings(categories)
+	if len(categories) == 0 {
+		categorySet := make(map[string]struct{})
+		for _, sticker := range items {
+			categorySet[sticker.Category] = struct{}{}
+		}
+		for category := range categorySet {
+			categories = append(categories, category)
+		}
+		sortStrings(categories)
+	}
 
 	topTrending := cloneStickers(items)
 	sortStickers(topTrending, "trending")
